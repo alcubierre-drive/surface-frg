@@ -1,0 +1,9 @@
+*.o
+*.d
+Makefile.local
+*.dvg
+*.dat
+*.dir
+*.tgz
+slurm*.out
+surf
