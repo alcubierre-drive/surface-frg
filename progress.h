@@ -11,6 +11,8 @@ void progress_bar_set_prefix( progress_bar_t* p, const char* prefix );
 void progress_bar_set_width( progress_bar_t* p, int width );
 void progress_bar_set_pchar( progress_bar_t* p, char pchar );
 void progress_bar_set_echar( progress_bar_t* p, char echar );
+void progress_bar_set_pchar_x( progress_bar_t* p, const char* pchar );
+void progress_bar_set_echar_x( progress_bar_t* p, const char* echar );
 
 void progress_bar_add( progress_bar_t* p );
 void progress_bar_add_N( progress_bar_t* p, int N );

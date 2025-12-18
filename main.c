@@ -221,10 +221,12 @@ static diverge_model_t* hubbard_ssh_surface( params_t p ) {
     double* omega_cpy = diverge_linspace( p.omega_min, p.omega_max, p.n_omega );
 
     progress_bar_t* pr = progress_bar_init( p.n_omega );
-    progress_bar_set_prefix( pr, "A(ω)" );
+    progress_bar_set_prefix( pr, "𝒜(ω)" );
     progress_bar_set_width( pr, 50 );
-    progress_bar_set_pchar( pr, 'A' );
-    progress_bar_set_echar( pr, 'w' );
+    progress_bar_set_pchar_x( pr, "𝒜" );
+    progress_bar_set_echar_x( pr, "ω" );
+    // progress_bar_set_pchar( pr, 'A' );
+    // progress_bar_set_echar( pr, 'w' );
     for (index_t i=0; i<p.n_omega; ++i) {
         omega[i] = omega_cpy[i] - I*p.omega_eta;
         index_t nktot = kdimtot(m->nk,m->nkf);

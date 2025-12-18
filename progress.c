@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define MIN(x,y) ((x) < (y) ? (x) : (y))
+
 struct progress_bar_t {
     atomic_int progress;
     atomic_int ntotal;
@@ -13,6 +15,12 @@ struct progress_bar_t {
     atomic_int width;
     atomic_char pchar;
     atomic_char echar;
+    atomic_int use_pchar_x;
+    atomic_int use_echar_x;
+
+    // unicode support
+    char pchar_x[32];
+    char echar_x[32];
 
     char prefix[32];
     atomic_flag has_finished;
@@ -25,8 +33,10 @@ progress_bar_t* progress_bar_init( int ntotal ) {
     atomic_init( &p->width, 60 );
     atomic_init( &p->pchar, '#' );
     atomic_init( &p->echar, '-' );
-    atomic_flag f = ATOMIC_FLAG_INIT;
-    p->has_finished = f;
+    atomic_init( &p->use_pchar_x, 0 );
+    atomic_init( &p->use_echar_x, 0 );
+
+    p->has_finished = (atomic_flag)ATOMIC_FLAG_INIT;
     atomic_flag_clear( &p->has_finished );
     return p;
 }
@@ -51,11 +61,34 @@ void progress_bar_set_echar( progress_bar_t* p, char echar ) {
     atomic_store( &p->echar, echar );
 }
 
+void progress_bar_set_pchar_x( progress_bar_t* p, const char* pchar ) {
+    if (!pchar) {
+        atomic_store( &p->use_pchar_x, 0 );
+    } else {
+        size_t ncopy = MIN( strlen(pchar), sizeof(p->pchar_x)-1 );
+        memcpy( p->pchar_x, pchar, ncopy );
+        atomic_store( &p->use_pchar_x, 1 );
+    }
+}
+
+void progress_bar_set_echar_x( progress_bar_t* p, const char* echar ) {
+    if (!echar) {
+        atomic_store( &p->use_echar_x, 0 );
+    } else {
+        size_t ncopy = MIN( strlen(echar), sizeof(p->echar_x)-1 );
+        memcpy( p->echar_x, echar, ncopy );
+        atomic_store( &p->use_echar_x, 1 );
+    }
+}
+
 static void progress_bar_print( progress_bar_t* p ) {
     float percentage = (float)atomic_load( &p->progress ) / (float)( atomic_load( &p->ntotal ) );
     int np = (int)( percentage * (float)atomic_load(&p->width) + 0.5 );
     char pc = atomic_load( &p->pchar );
     char ec = atomic_load( &p->echar );
+
+    int use_pc = !atomic_load( &p->use_pchar_x ),
+        use_ec = !atomic_load( &p->use_echar_x );
 
     if (np < 0) np = 0;
     int w = atomic_load( &p->width );
@@ -65,7 +98,7 @@ static void progress_bar_print( progress_bar_t* p ) {
     if (np == w)
         has_finished = atomic_flag_test_and_set( &p->has_finished );
 
-    char pstr[p->width + 64];
+    char pstr[p->width*8 + 64];
     pstr[0] = '\r';
     pstr[1] = '\0';
     strcat(pstr, p->prefix);
@@ -73,10 +106,23 @@ static void progress_bar_print( progress_bar_t* p ) {
     if (c > 2) pstr[c++] = ' ';
     pstr[c++] = '[';
     int i = 0;
-    for (; i<np; ++i)
-        pstr[c++] = pc;
-    for (; i<w; ++i)
-        pstr[c++] = ec;
+    if (use_pc) {
+        for (; i<np; ++i) pstr[c++] = pc;
+    } else {
+        for (; i<np; ++i) {
+            strcpy(pstr + c, p->pchar_x);
+            c += strlen(p->pchar_x);
+        }
+    }
+
+    if (use_ec) {
+        for (; i<w; ++i) pstr[c++] = ec;
+    } else {
+        for (; i<w; ++i) {
+            strcpy(pstr + c, p->echar_x);
+            c += strlen(p->echar_x);
+        }
+    }
     char end[32] = {0};
     sprintf( end, "] %3.0f", percentage * 100.0 );
     for (const char* pe = end; *pe; ++pe)
