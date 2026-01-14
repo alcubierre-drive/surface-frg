@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Lennart Klebl; GPLv3+ (LICENSE.md) */
+/* Copyright (C) 2026 Lennart Klebl; GPLv3+ (LICENSE.md) */
 
 #include <diverge.h>
 #include <diverge_misc.h>
