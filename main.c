@@ -220,28 +220,34 @@ static diverge_model_t* hubbard_ssh_surface( params_t p ) {
     complex128_t* dos = omega + p.n_omega;
     double* omega_cpy = diverge_linspace( p.omega_min, p.omega_max, p.n_omega );
 
-    progress_bar_t* pr = progress_bar_init( p.n_omega );
-    progress_bar_set_prefix( pr, "𝒜(ω)" );
-    progress_bar_set_width( pr, 50 );
-    progress_bar_set_pchar_x( pr, "𝒜" );
-    progress_bar_set_echar_x( pr, "ω" );
-    // progress_bar_set_pchar( pr, 'A' );
-    // progress_bar_set_echar( pr, 'w' );
-    for (index_t i=0; i<p.n_omega; ++i) {
-        omega[i] = omega_cpy[i] - I*p.omega_eta;
-        index_t nktot = kdimtot(m->nk,m->nkf);
-        gf_complex_t* gbuf = m->internals->greens;
+    if (diverge_mpi_comm_rank() == 0) {
+        progress_bar_t* pr = progress_bar_init( p.n_omega );
+        progress_bar_set_prefix( pr, "𝒜(ω)" );
+        progress_bar_set_width( pr, 50 );
+        progress_bar_set_pchar_x( pr, "𝒜" );
+        progress_bar_set_echar_x( pr, "ω" );
+        for (index_t i=0; i<p.n_omega; ++i) {
+            omega[i] = omega_cpy[i] - I*p.omega_eta;
+            index_t nktot = kdimtot(m->nk,m->nkf);
+            gf_complex_t* gbuf = m->internals->greens;
 
-        complex64_t Lambda = omega[i];
-        double real = qnan_gen(0);
-        complex128_t IN = 0;
-        memcpy( &IN, &real, sizeof(real) );
-        memcpy( (char*)&IN + sizeof(double), &Lambda, sizeof(Lambda) );
-        (*m->gfill)( m, IN, gbuf );
-        for (index_t k=0; k<nktot; ++k) dos[i] += gbuf[k];
-        progress_bar_add( pr );
+            complex64_t Lambda = omega[i];
+            double real = qnan_gen(0);
+            complex128_t IN = 0;
+            memcpy( &IN, &real, sizeof(real) );
+            memcpy( (char*)&IN + sizeof(double), &Lambda, sizeof(Lambda) );
+            (*m->gfill)( m, IN, gbuf );
+            for (index_t k=0; k<nktot; ++k) dos[i] += gbuf[k];
+            progress_bar_add( pr );
+        }
+        progress_bar_free( pr );
+        // send the DOS around
+        for (int r=1; r<diverge_mpi_comm_size(); ++r)
+            diverge_mpi_send_double( dos, p.n_omega, r, r );
+    } else {
+        // receive the DOS that's been sent around
+        diverge_mpi_recv_double( dos, p.n_omega, 0, diverge_mpi_comm_rank() );
     }
-    progress_bar_free( pr );
     return m;
 }
 
