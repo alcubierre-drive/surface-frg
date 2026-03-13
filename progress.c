@@ -42,6 +42,7 @@ progress_bar_t* progress_bar_init( int ntotal ) {
 }
 
 void progress_bar_free( progress_bar_t* p ) {
+    if (!atomic_flag_test_and_set(&p->has_finished)) fputs( "\n", stderr ), fflush( stderr );
     free( p );
 }
 

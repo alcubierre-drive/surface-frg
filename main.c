@@ -13,11 +13,13 @@ LINALG_IMPLEMENT
 typedef struct {
     double v, w, tp, U, mu;
     int nk, nkf;
-    double tu_dist;
+    double tu_dist, maxvert, relstep;
 
     int n_omega;
     double omega_min, omega_max;
     double omega_eta;
+
+    int quiet;
 
     char model_file[1024];
     char post_file[1024];
@@ -27,11 +29,13 @@ typedef struct {
 static const params_t params_default = {
     .v = 0.0, .w = 0.0, .tp = 0.0, .U = 3.0, .mu = 0.0,
     .nk = 24, .nkf = 5,
-    .tu_dist = 2.01,
+    .tu_dist = 2.01, .maxvert = 30, .relstep = 0.1,
 
     .n_omega = 100,
     .omega_min = -2., .omega_max = 2.,
     .omega_eta = 1.e-1,
+
+    .quiet = 0,
 
     .model_file = "ssh_surface_mod.dvg",
     .post_file = "ssh_surface_post.dvg",
@@ -63,13 +67,29 @@ int main( int argc, char** argv ) {
             fprintf(flow, __VA_ARGS__); \
             fflush(flow); \
         } \
-        mpi_printf(__VA_ARGS__); \
-        fflush(stdout); \
+        if (mpi_loglevel_get() > 0) { \
+            mpi_printf(__VA_ARGS__); \
+            fflush(stdout); \
+        } \
     }
 
-    diverge_euler_t eu = diverge_euler_defaults; eu.maxvert = 30;
+    diverge_euler_t eu = diverge_euler_defaults;
+    eu.maxvert = p.maxvert;
+    eu.dLambda_fac = p.relstep;
+    eu.dLambda = -p.relstep * eu.Lambda;
     double maxvert = 0.0;
+
+    index_t eu_niter = diverge_euler_nsteps_anticip( eu );
+    progress_bar_t* eu_p = (diverge_mpi_comm_rank() == 0 && p.quiet) ?
+        progress_bar_init( eu_niter ) : NULL;
+    if (eu_p) {
+        progress_bar_set_pchar_x( eu_p, "Γ" );
+        progress_bar_set_echar_x( eu_p, "Λ" );
+        progress_bar_set_prefix( eu_p, "Γ(Λ)" );
+        progress_bar_set_width( eu_p, 50 );
+    }
     do {
+        if (eu_p) progress_bar_add( eu_p );
         diverge_flow_step_euler( s, eu.Lambda, eu.dLambda );
         double chmax[3] = {0};
         diverge_flow_step_chanmax( s, chmax );
@@ -77,6 +97,8 @@ int main( int argc, char** argv ) {
         bprintf( "%.5e %.5e %.5e %.5e\n", eu.Lambda, chmax[0], chmax[1], chmax[2] );
         maxvert = MAX(chmax[0],MAX(chmax[1],chmax[2]));
     } while (diverge_euler_next( &eu, maxvert ));
+    if (eu_p)
+        progress_bar_free( eu_p );
 
     if (flow) {
         fclose(flow);
@@ -257,7 +279,7 @@ static params_t parse_args( int* pargc, char*** pargv ) {
     char pad[512] = "";
     sprintf( pad, "%*s", (int)strlen(*pargv[0]), " " );
     int opt;
-    while ((opt = getopt(*pargc, *pargv, "K:k: U: v:w: m: t: o:O:n:e: M:F:P: T:h")) != -1) {
+    while ((opt = getopt(*pargc, *pargv, "K:k: U: v:w: m: t: o:O:n:e: M:F:P: T:V:L:qh")) != -1) {
         switch (opt) {
             case 'K': p.nk = atoi(optarg); break;
             case 'k': p.nkf = atoi(optarg); break;
@@ -279,12 +301,17 @@ static params_t parse_args( int* pargc, char*** pargv ) {
             case 'F': strncpy( p.flow_file, optarg, sizeof(p.flow_file)-1 ); break;
 
             case 'T': p.tu_dist = atof(optarg); break;
+            case 'V': p.maxvert = atof(optarg); break;
+            case 'L': p.relstep = atof(optarg); break;
+
+            case 'q': p.quiet = 1; mpi_loglevel_set(0); break;
 
             case 'h': fprintf( stderr,
                         "Usage: %s [-K:nk] [-k:nkf] [-U:Hubbard-U] [-v:hopping v] [-w:hopping w] [-m:mu]\n"
                         "       %s [-t:tprime] [-o:omega_min] [-O:omega_max] [-n:n_omega] [-e:omega_eta]\n"
-                        "       %s [-M:model file] [-P:post file] [-F:flow file] [-T:tu_dist] [-h this help]\n"
-                        , *pargv[0], pad, pad );
+                        "       %s [-M:model file] [-P:post file] [-F:flow file] [-T:tu_dist] [-V:maxvert]\n"
+                        "       %s [-L:relstep] [-q quiet] [-h this help]\n"
+                        , *pargv[0], pad, pad, pad );
                       exit(EXIT_SUCCESS); break;
             case '?':
             default:
