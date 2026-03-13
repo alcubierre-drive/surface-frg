@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define MIN(x,y) ((x) < (y) ? (x) : (y))
 
@@ -17,6 +18,9 @@ struct progress_bar_t {
     atomic_char echar;
     atomic_int use_pchar_x;
     atomic_int use_echar_x;
+
+    atomic_int timing;
+    _Atomic double tstart;
 
     // unicode support
     char pchar_x[32];
@@ -35,10 +39,17 @@ progress_bar_t* progress_bar_init( int ntotal ) {
     atomic_init( &p->echar, '-' );
     atomic_init( &p->use_pchar_x, 0 );
     atomic_init( &p->use_echar_x, 0 );
+    atomic_init( &p->timing, 0 );
 
     p->has_finished = (atomic_flag)ATOMIC_FLAG_INIT;
     atomic_flag_clear( &p->has_finished );
     return p;
+}
+
+static inline double current_time( void ) {
+    struct timespec ts = {0};
+    timespec_get(&ts, TIME_UTC);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1.e+9;
 }
 
 void progress_bar_free( progress_bar_t* p ) {
@@ -79,6 +90,15 @@ void progress_bar_set_echar_x( progress_bar_t* p, const char* echar ) {
         size_t ncopy = MIN( strlen(echar), sizeof(p->echar_x)-1 );
         memcpy( p->echar_x, echar, ncopy );
         atomic_store( &p->use_echar_x, 1 );
+    }
+}
+
+void progress_bar_set_timing( progress_bar_t* p, int timing ) {
+    if (timing) {
+        atomic_store( &p->timing, 1 );
+        atomic_store( &p->tstart, current_time() );
+    } else {
+        atomic_store( &p->timing, 0 );
     }
 }
 
@@ -129,7 +149,16 @@ static void progress_bar_print( progress_bar_t* p ) {
     for (const char* pe = end; *pe; ++pe)
         pstr[c++] = *pe;
     pstr[c++] = '%';
-    pstr[c++] = '\0';
+    if (atomic_load(&p->timing)) {
+        double pp = atomic_load(&p->progress),
+               tt = atomic_load(&p->ntotal);
+        if (pp != 0 && tt != 0) {
+            double elapsed = current_time() - atomic_load(&p->tstart);
+            sprintf( &pstr[c], " ~%8.1fs  ", elapsed * (tt/pp-1.) );
+        }
+    } else {
+        pstr[c++] = '\0';
+    }
 
     if (!has_finished)
         fputs( pstr, stderr );
