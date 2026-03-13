@@ -6,4 +6,5 @@ Makefile.local
 *.dir
 *.tgz
 slurm*.out
-surf
+surf*
+pd.sh
